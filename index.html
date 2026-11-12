@@ -2,30 +2,36 @@
 <html lang="ru">
 <head>
 <meta charset="UTF-8">
-<title>Karaoke Desk</title>
+<title>Karaoke Desk Pro</title>
+<script src="https://vk.com/js/api/videoplayer.js"></script>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; font-family: system-ui, -apple-system, sans-serif; }
   body { background: #111; color: #fff; height: 100vh; overflow: hidden; }
   
-  #tv-mode { width: 100vw; height: 100vh; display: none; background: #000; position: relative; }
-  #tv-player { width: 100%; height: 100%; border: none; display: none; }
-  #tv-idle { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; background: radial-gradient(circle, #222 0%, #000 100%); text-align: center; padding: 20px; }
+  /* ЭКРАН ЗАЛА */
+  #tv-mode { width: 100vw; height: 100vh; display: none; background: #000; position: relative; cursor: pointer; }
+  .tv-layer { position: absolute; inset: 0; width: 100%; height: 100%; border: none; opacity: 0; pointer-events: none; transition: opacity 0.2s linear; }
+  #tv-idle { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; background: radial-gradient(circle, #222 0%, #000 100%); text-align: center; padding: 20px; z-index: 10; transition: opacity 0.8s ease; }
   #tv-idle h1 { font-size: 3.5rem; margin-bottom: 12px; letter-spacing: 3px; }
   #tv-idle p { color: #888; font-size: 1.5rem; }
 
-  #dj-mode { display: flex; flex-direction: column; height: 100vh; padding: 20px; gap: 15px; max-width: 900px; margin: 0 auto; }
-  .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #333; padding-bottom: 15px; }
-  .btn { background: #2b5278; color: #fff; border: none; padding: 10px 16px; border-radius: 8px; cursor: pointer; font-weight: 600; font-size: 14px; }
+  /* ПУЛЬТ ВЕДУЩЕГО */
+  #dj-mode { display: flex; flex-direction: column; height: 100vh; padding: 20px; gap: 15px; max-width: 960px; margin: 0 auto; }
+  .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #333; padding-bottom: 15px; gap: 10px; flex-wrap: wrap; }
+  .btn { background: #2b5278; color: #fff; border: none; padding: 10px 16px; border-radius: 8px; cursor: pointer; font-weight: 600; font-size: 14px; white-space: nowrap; }
   .btn:hover { background: #376898; }
   .btn-green { background: #2e7d32; }
   .btn-green:hover { background: #388e3c; }
+  .btn-orange { background: #ef6c00; }
+  .btn-orange:hover { background: #f57c00; }
   .btn-red { background: #c62828; }
   .btn-red:hover { background: #d32f2f; }
 
   .box { background: #1c1c1e; padding: 15px; border-radius: 12px; display: flex; flex-direction: column; gap: 10px; }
-  .row { display: flex; gap: 10px; }
-  input { flex: 1; background: #2c2c2e; border: 1px solid #444; color: #fff; padding: 10px 14px; border-radius: 8px; font-size: 15px; outline: none; }
-  input:focus { border-color: #4a90e2; }
+  .row { display: flex; gap: 10px; align-items: center; }
+  input[type="text"] { flex: 1; background: #2c2c2e; border: 1px solid #444; color: #fff; padding: 10px 14px; border-radius: 8px; font-size: 15px; outline: none; }
+  input[type="text"]:focus { border-color: #4a90e2; }
+  input[type="range"] { accent-color: #ef6c00; cursor: pointer; }
 
   .queue { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
   .item { background: #2c2c2e; padding: 12px 15px; border-radius: 8px; display: flex; justify-content: space-between; align-items: center; gap: 10px; }
@@ -34,63 +40,71 @@
   .item-title { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .item-url { font-size: 12px; color: #888; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .hint { font-size: 13px; color: #aaa; line-height: 1.4; }
+  .fade-badge { background: #2c2c2e; padding: 6px 12px; border-radius: 8px; font-size: 13px; display: flex; align-items: center; gap: 8px; border: 1px solid #3a3a3c; }
 </style>
 </head>
 <body>
 
+<!-- ЭКРАН ТВ -->
 <div id="tv-mode">
   <div id="tv-idle">
     <h1>KARAOKE</h1>
     <p id="tv-next-text">Кликните по экрану один раз для активации звука</p>
   </div>
-  <iframe id="tv-player" allow="autoplay; encrypted-media; fullscreen; picture-in-picture;" allowfullscreen></iframe>
+  <iframe id="player-0" class="tv-layer" allow="autoplay; encrypted-media; fullscreen; picture-in-picture;" allowfullscreen></iframe>
+  <iframe id="player-1" class="tv-layer" allow="autoplay; encrypted-media; fullscreen; picture-in-picture;" allowfullscreen></iframe>
 </div>
 
+<!-- ПУЛЬТ -->
 <div id="dj-mode">
   <div class="header">
     <h2>Пульт Караоке</h2>
-    <button class="btn" onclick="openTvWindow()">Открыть экран для ТВ</button>
-  </div>
-
-  <div class="box">
-    <div class="hint">1. Найди видео в VK, скопируй ссылку из адресной строки (вида <b>vk.com/video-12345_67890</b> или <b>vkvideo.ru/video...</b>):</div>
     <div class="row">
-      <input type="text" id="search-input" placeholder="Название песни и исполнитель..." onkeydown="if(event.key==='Enter') searchVK()">
-      <button class="btn" onclick="searchVK()">Искать в VK Видео</button>
+      <div class="fade-badge">
+        <span>Кроссфейд: <b id="fade-val">3.0</b> сек</span>
+        <input type="range" id="fade-sec" min="0" max="8" step="0.5" value="3" oninput="document.getElementById('fade-val').textContent=Number(this.value).toFixed(1)">
+      </div>
+      <button class="btn" onclick="openTvWindow()">Открыть окно ТВ</button>
     </div>
   </div>
 
   <div class="box">
-    <div class="hint">2. Вставь ссылку на видео и подпиши для очереди:</div>
+    <div class="hint">1. Поиск трека в VK Видео:</div>
+    <div class="row">
+      <input type="text" id="search-input" placeholder="Название песни и исполнитель..." onkeydown="if(event.key==='Enter') searchVK()">
+      <button class="btn" onclick="searchVK()">Искать в VK</button>
+    </div>
+  </div>
+
+  <div class="box">
+    <div class="hint">2. Добавление в очередь по ссылке:</div>
     <div class="row">
       <input type="text" id="title-input" placeholder="Название трека">
-      <input type="text" id="url-input" placeholder="Ссылка на видео из VK..." onkeydown="if(event.key==='Enter') addToQueue()">
+      <input type="text" id="url-input" placeholder="Вставь ссылку из VK..." onkeydown="if(event.key==='Enter') addToQueue()">
       <button class="btn btn-green" onclick="addToQueue()">В очередь</button>
     </div>
   </div>
 
   <div class="box" style="flex: 1; overflow: hidden;">
-    <div style="display:flex; justify-content:space-between; align-items:center;">
+    <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap;">
       <b>Очередь песен</b>
-      <button class="btn btn-red" style="padding: 6px 12px; font-size: 12px;" onclick="stopTv()">Стоп / Заставка на ТВ</button>
+      <div class="row">
+        <button class="btn btn-orange" onclick="playNextSmooth()">Следующий плавно ⏭</button>
+        <button class="btn btn-red" onclick="stopTvSmooth()">Плавный стоп / Заставка</button>
+      </div>
     </div>
     <div class="queue" id="queue-list"></div>
   </div>
 </div>
 
 <script>
-  const channel = new BroadcastChannel('karaoke_sync');
+  const channel = new BroadcastChannel('karaoke_sync_pro');
   const isTv = new URLSearchParams(window.location.search).get('tv') === '1';
   let queue = JSON.parse(localStorage.getItem('karaoke_queue') || '[]');
   let currentId = null;
 
-  if (isTv) {
-    document.getElementById('tv-mode').style.display = 'block';
-    document.getElementById('dj-mode').style.display = 'none';
-    document.getElementById('tv-mode').addEventListener('click', () => {
-      document.getElementById('tv-next-text').textContent = 'Ожидание следующего трека...';
-    }, { once: true });
-  } else {
+  /* --- ЛОГИКА ПУЛЬТА --- */
+  if (!isTv) {
     renderQueue();
   }
 
@@ -101,16 +115,15 @@
   function searchVK() {
     const q = document.getElementById('search-input').value.trim();
     if (!q) return;
-    if (!document.getElementById('title-input').value) {
-      document.getElementById('title-input').value = q;
-    }
+    document.getElementById('title-input').value = q;
     window.open('https://vkvideo.ru/?q=' + encodeURIComponent(q + ' караоке'), '_blank');
   }
 
   function parseVkEmbedUrl(rawUrl) {
     const match = rawUrl.match(/video(-?\d+)_(\d+)/);
     if (!match) return null;
-    return `https://vk.com/video_ext.php?oid=${match[1]}&id=${match[2]}&hd=2&autoplay=1`;
+    // js_api=1 обязателен для программного управления громкостью
+    return `https://vk.com/video_ext.php?oid=${match[1]}&id=${match[2]}&hd=2&autoplay=1&js_api=1`;
   }
 
   function addToQueue() {
@@ -130,12 +143,27 @@
     document.getElementById('search-input').value = '';
   }
 
+  function getFadeMs() {
+    return parseFloat(document.getElementById('fade-sec').value) * 1000;
+  }
+
   function playTrack(id) {
     const track = queue.find(t => t.id === id);
     if (!track) return;
     currentId = id;
     renderQueue();
-    channel.postMessage({ type: 'PLAY', embedUrl: track.embedUrl, title: track.title });
+    channel.postMessage({ type: 'CROSSFADE', embedUrl: track.embedUrl, title: track.title, fadeMs: getFadeMs() });
+  }
+
+  function playNextSmooth() {
+    if (queue.length === 0) return;
+    if (!currentId) {
+      playTrack(queue[0].id);
+      return;
+    }
+    const idx = queue.findIndex(t => t.id === currentId);
+    const nextIdx = (idx + 1 < queue.length) ? idx + 1 : 0;
+    playTrack(queue[nextIdx].id);
   }
 
   function removeTrack(id) {
@@ -144,11 +172,11 @@
     saveAndRender();
   }
 
-  function stopTv() {
+  function stopTvSmooth() {
     currentId = null;
     renderQueue();
     const nextTitle = queue.length > 0 ? `Следующая песня: ${queue[0].title}` : 'Ожидание следующего трека...';
-    channel.postMessage({ type: 'STOP', nextText: nextTitle });
+    channel.postMessage({ type: 'STOP', nextText: nextTitle, fadeMs: getFadeMs() });
   }
 
   function saveAndRender() {
@@ -168,7 +196,7 @@
           <div class="item-url">${t.rawUrl}</div>
         </div>
         <div class="row">
-          <button class="btn btn-green" onclick="playTrack(${t.id})">Включить</button>
+          <button class="btn btn-green" onclick="playTrack(${t.id})">Включить плавно</button>
           <button class="btn btn-red" onclick="removeTrack(${t.id})">Удалить</button>
         </div>
       `;
@@ -176,22 +204,139 @@
     });
   }
 
-  channel.onmessage = (e) => {
-    if (!isTv) return;
-    const player = document.getElementById('tv-player');
-    const idle = document.getElementById('tv-idle');
+  /* --- ЛОГИКА ЭКРАНА ТВ (КРОССФЕЙД ДВУХ ДЕК) --- */
+  if (isTv) {
+    document.getElementById('tv-mode').style.display = 'block';
+    document.getElementById('dj-mode').style.display = 'none';
+    document.getElementById('tv-mode').addEventListener('click', () => {
+      document.getElementById('tv-next-text').textContent = 'Ожидание следующего трека...';
+    }, { once: true });
 
-    if (e.data.type === 'PLAY') {
-      idle.style.display = 'none';
-      player.style.display = 'block';
-      player.src = e.data.embedUrl;
-    } else if (e.data.type === 'STOP') {
-      player.src = '';
-      player.style.display = 'none';
-      idle.style.display = 'flex';
-      document.getElementById('tv-next-text').textContent = e.data.nextText;
+    let activeDeck = -1; // -1: ничего не играет, 0: player-0, 1: player-1
+    let fadeTimer = null;
+
+    function getVkApi(iframeEl) {
+      try {
+        if (window.VK && VK.VideoPlayer && iframeEl.src) {
+          return VK.VideoPlayer(iframeEl);
+        }
+      } catch (e) {}
+      return null;
     }
-  };
+
+    function setDeckVolume(iframeEl, vol) {
+      const api = getVkApi(iframeEl);
+      if (api && typeof api.setVolume === 'function') {
+        try { api.setVolume(vol); } catch (e) {}
+      }
+    }
+
+    function runCrossfade(newUrl, fadeMs) {
+      if (fadeTimer) clearInterval(fadeTimer);
+
+      const idle = document.getElementById('tv-idle');
+      const nextDeck = activeDeck === 0 ? 1 : 0;
+      const outEl = activeDeck !== -1 ? document.getElementById(`player-${activeDeck}`) : null;
+      const inEl = document.getElementById(`player-${nextDeck}`);
+
+      // Подготовка новой деки
+      inEl.style.transition = 'none';
+      inEl.style.opacity = '0';
+      inEl.style.zIndex = '2';
+      if (outEl) outEl.style.zIndex = '1';
+
+      inEl.src = newUrl;
+      activeDeck = nextDeck;
+
+      // Скрываем заставку
+      idle.style.opacity = '0';
+      setTimeout(() => { if (activeDeck !== -1) idle.style.display = 'none'; }, 800);
+
+      // Мгновенный переход, если кроссфейд = 0
+      if (fadeMs <= 0) {
+        inEl.style.opacity = '1';
+        setTimeout(() => setDeckVolume(inEl, 1), 400);
+        if (outEl) {
+          outEl.style.opacity = '0';
+          outEl.src = '';
+        }
+        return;
+      }
+
+      // Ставим громкость стартующего плеера на 0 сразу после инициализации iframe
+      inEl.onload = () => {
+        setDeckVolume(inEl, 0);
+      };
+
+      const steps = 30;
+      const stepTime = fadeMs / steps;
+      let currentStep = 0;
+
+      fadeTimer = setInterval(() => {
+        currentStep++;
+        const progress = Math.min(currentStep / steps, 1);
+
+        // Плавная кривая громкости и картинки
+        inEl.style.opacity = String(progress);
+        setDeckVolume(inEl, progress);
+
+        if (outEl) {
+          outEl.style.opacity = String(1 - progress);
+          setDeckVolume(outEl, 1 - progress);
+        }
+
+        if (progress >= 1) {
+          clearInterval(fadeTimer);
+          fadeTimer = null;
+          if (outEl) {
+            outEl.src = ''; // Выгружаем старый плеер
+          }
+        }
+      }, stepTime);
+    }
+
+    function runFadeOutToIdle(nextText, fadeMs) {
+      if (fadeTimer) clearInterval(fadeTimer);
+      const idle = document.getElementById('tv-idle');
+      document.getElementById('tv-next-text').textContent = nextText;
+      idle.style.display = 'flex';
+
+      const outEl = activeDeck !== -1 ? document.getElementById(`player-${activeDeck}`) : null;
+      activeDeck = -1;
+
+      if (!outEl || fadeMs <= 0) {
+        idle.style.opacity = '1';
+        if (outEl) { outEl.style.opacity = '0'; outEl.src = ''; }
+        return;
+      }
+
+      const steps = 25;
+      const stepTime = fadeMs / steps;
+      let currentStep = 0;
+
+      fadeTimer = setInterval(() => {
+        currentStep++;
+        const progress = Math.min(currentStep / steps, 1);
+        idle.style.opacity = String(progress);
+        outEl.style.opacity = String(1 - progress);
+        setDeckVolume(outEl, 1 - progress);
+
+        if (progress >= 1) {
+          clearInterval(fadeTimer);
+          fadeTimer = null;
+          outEl.src = '';
+        }
+      }, stepTime);
+    }
+
+    channel.onmessage = (e) => {
+      if (e.data.type === 'CROSSFADE') {
+        runCrossfade(e.data.embedUrl, e.data.fadeMs);
+      } else if (e.data.type === 'STOP') {
+        runFadeOutToIdle(e.data.nextText, e.data.fadeMs);
+      }
+    };
+  }
 </script>
 </body>
 </html>
