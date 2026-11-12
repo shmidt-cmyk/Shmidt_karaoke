@@ -11,6 +11,7 @@
   /* ЭКРАН ЗАЛА */
   #tv-mode { width: 100vw; height: 100vh; display: none; background: #000; position: relative; cursor: pointer; }
   .tv-layer { position: absolute; inset: 0; width: 100%; height: 100%; border: none; opacity: 0; pointer-events: none; transition: opacity 0.2s linear; }
+  .tv-layer.active-layer { pointer-events: auto; }
   #tv-idle { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; background: radial-gradient(circle, #222 0%, #000 100%); text-align: center; padding: 20px; z-index: 10; transition: opacity 0.8s ease; }
   #tv-idle h1 { font-size: 3.5rem; margin-bottom: 12px; letter-spacing: 3px; }
   #tv-idle p { color: #888; font-size: 1.5rem; }
@@ -51,8 +52,8 @@
     <h1>KARAOKE</h1>
     <p id="tv-next-text">Кликните по экрану один раз для активации звука</p>
   </div>
-  <iframe id="player-0" class="tv-layer" allow="autoplay; encrypted-media; fullscreen; picture-in-picture;" allowfullscreen></iframe>
-  <iframe id="player-1" class="tv-layer" allow="autoplay; encrypted-media; fullscreen; picture-in-picture;" allowfullscreen></iframe>
+  <iframe id="player-0" class="tv-layer" allow="autoplay *; encrypted-media *; fullscreen *; picture-in-picture *;" allowfullscreen></iframe>
+  <iframe id="player-1" class="tv-layer" allow="autoplay *; encrypted-media *; fullscreen *; picture-in-picture *;" allowfullscreen></iframe>
 </div>
 
 <!-- ПУЛЬТ -->
@@ -103,7 +104,6 @@
   let queue = JSON.parse(localStorage.getItem('karaoke_queue') || '[]');
   let currentId = null;
 
-  /* --- ЛОГИКА ПУЛЬТА --- */
   if (!isTv) {
     renderQueue();
   }
@@ -122,7 +122,6 @@
   function parseVkEmbedUrl(rawUrl) {
     const match = rawUrl.match(/video(-?\d+)_(\d+)/);
     if (!match) return null;
-    // js_api=1 обязателен для программного управления громкостью
     return `https://vk.com/video_ext.php?oid=${match[1]}&id=${match[2]}&hd=2&autoplay=1&js_api=1`;
   }
 
@@ -204,7 +203,7 @@
     });
   }
 
-  /* --- ЛОГИКА ЭКРАНА ТВ (КРОССФЕЙД ДВУХ ДЕК) --- */
+  /* --- ЛОГИКА ЭКРАНА ТВ --- */
   if (isTv) {
     document.getElementById('tv-mode').style.display = 'block';
     document.getElementById('dj-mode').style.display = 'none';
@@ -212,61 +211,80 @@
       document.getElementById('tv-next-text').textContent = 'Ожидание следующего трека...';
     }, { once: true });
 
-    let activeDeck = -1; // -1: ничего не играет, 0: player-0, 1: player-1
+    let activeDeck = -1;
     let fadeTimer = null;
+    const players = [null, null];
 
-    function getVkApi(iframeEl) {
+    function initPlayerApi(deckIndex, iframeEl, initialVol) {
       try {
-        if (window.VK && VK.VideoPlayer && iframeEl.src) {
-          return VK.VideoPlayer(iframeEl);
+        if (window.VK && VK.VideoPlayer) {
+          const api = VK.VideoPlayer(iframeEl);
+          players[deckIndex] = api;
+          api.on('inited', () => {
+            try {
+              api.unmute();
+              api.setVolume(initialVol);
+              api.play();
+            } catch (e) {}
+          });
+          api.on('started', () => {
+            try {
+              api.unmute();
+            } catch (e) {}
+          });
         }
       } catch (e) {}
-      return null;
     }
 
-    function setDeckVolume(iframeEl, vol) {
-      const api = getVkApi(iframeEl);
-      if (api && typeof api.setVolume === 'function') {
-        try { api.setVolume(vol); } catch (e) {}
-      }
+    function applyAudioLevel(deckIndex, vol) {
+      const api = players[deckIndex];
+      if (!api) return;
+      try {
+        if (vol > 0.02) api.unmute();
+        api.setVolume(vol);
+      } catch (e) {}
     }
 
     function runCrossfade(newUrl, fadeMs) {
       if (fadeTimer) clearInterval(fadeTimer);
 
       const idle = document.getElementById('tv-idle');
-      const nextDeck = activeDeck === 0 ? 1 : 0;
-      const outEl = activeDeck !== -1 ? document.getElementById(`player-${activeDeck}`) : null;
-      const inEl = document.getElementById(`player-${nextDeck}`);
+      const outDeck = activeDeck;
+      const inDeck = activeDeck === 0 ? 1 : 0;
 
-      // Подготовка новой деки
+      const outEl = outDeck !== -1 ? document.getElementById(`player-${outDeck}`) : null;
+      const inEl = document.getElementById(`player-${inDeck}`);
+
+      if (outEl) {
+        outEl.style.zIndex = '1';
+        outEl.classList.remove('active-layer');
+      }
+
       inEl.style.transition = 'none';
       inEl.style.opacity = '0';
       inEl.style.zIndex = '2';
-      if (outEl) outEl.style.zIndex = '1';
+      inEl.classList.add('active-layer');
 
+      players[inDeck] = null;
       inEl.src = newUrl;
-      activeDeck = nextDeck;
+      activeDeck = inDeck;
 
-      // Скрываем заставку
+      const startVol = fadeMs <= 0 ? 1 : 0.05;
+      initPlayerApi(inDeck, inEl, startVol);
+
       idle.style.opacity = '0';
       setTimeout(() => { if (activeDeck !== -1) idle.style.display = 'none'; }, 800);
 
-      // Мгновенный переход, если кроссфейд = 0
       if (fadeMs <= 0) {
         inEl.style.opacity = '1';
-        setTimeout(() => setDeckVolume(inEl, 1), 400);
+        setTimeout(() => applyAudioLevel(inDeck, 1), 500);
         if (outEl) {
           outEl.style.opacity = '0';
           outEl.src = '';
+          players[outDeck] = null;
         }
         return;
       }
-
-      // Ставим громкость стартующего плеера на 0 сразу после инициализации iframe
-      inEl.onload = () => {
-        setDeckVolume(inEl, 0);
-      };
 
       const steps = 30;
       const stepTime = fadeMs / steps;
@@ -276,20 +294,20 @@
         currentStep++;
         const progress = Math.min(currentStep / steps, 1);
 
-        // Плавная кривая громкости и картинки
         inEl.style.opacity = String(progress);
-        setDeckVolume(inEl, progress);
+        applyAudioLevel(inDeck, progress);
 
-        if (outEl) {
+        if (outEl && outDeck !== -1) {
           outEl.style.opacity = String(1 - progress);
-          setDeckVolume(outEl, 1 - progress);
+          applyAudioLevel(outDeck, 1 - progress);
         }
 
         if (progress >= 1) {
           clearInterval(fadeTimer);
           fadeTimer = null;
           if (outEl) {
-            outEl.src = ''; // Выгружаем старый плеер
+            outEl.src = '';
+            players[outDeck] = null;
           }
         }
       }, stepTime);
@@ -301,12 +319,18 @@
       document.getElementById('tv-next-text').textContent = nextText;
       idle.style.display = 'flex';
 
-      const outEl = activeDeck !== -1 ? document.getElementById(`player-${activeDeck}`) : null;
+      const outDeck = activeDeck;
+      const outEl = outDeck !== -1 ? document.getElementById(`player-${outDeck}`) : null;
       activeDeck = -1;
 
       if (!outEl || fadeMs <= 0) {
         idle.style.opacity = '1';
-        if (outEl) { outEl.style.opacity = '0'; outEl.src = ''; }
+        if (outEl) {
+          outEl.style.opacity = '0';
+          outEl.classList.remove('active-layer');
+          outEl.src = '';
+          players[outDeck] = null;
+        }
         return;
       }
 
@@ -319,12 +343,14 @@
         const progress = Math.min(currentStep / steps, 1);
         idle.style.opacity = String(progress);
         outEl.style.opacity = String(1 - progress);
-        setDeckVolume(outEl, 1 - progress);
+        applyAudioLevel(outDeck, 1 - progress);
 
         if (progress >= 1) {
           clearInterval(fadeTimer);
           fadeTimer = null;
+          outEl.classList.remove('active-layer');
           outEl.src = '';
+          players[outDeck] = null;
         }
       }, stepTime);
     }
